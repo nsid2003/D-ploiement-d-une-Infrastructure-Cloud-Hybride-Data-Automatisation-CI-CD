@@ -1,355 +1,458 @@
 # ☁️ Déploiement d'une Infrastructure Cloud Hybride, Data & Automatisation CI/CD
 
-> Projet de référence conçu comme une **révision opérationnelle transversale** pour la certification **Microsoft Azure Administrator (AZ-104)**, enrichie des notions **AZ-700 (Réseau)**, **AZ-500 (Sécurité)**, **AZ-800/801 (Hybridation)** et **AZ-400 (DevSecOps)**.
->
-> L'objectif : construire de A à Z une architecture d'entreprise **hybride** (On-Premise ↔ Azure), en **documentant et justifiant chaque choix technique**, avec un accent fort sur le **diagnostic et la résolution de problèmes réels**.
+> Projet de référence pour la certification **Microsoft Azure Administrator (AZ-104)**, enrichi des notions **AZ-700 / AZ-500 / AZ-800-801 / AZ-400**.
+> Construction de A à Z d'une infrastructure **hybride** (On-Premise ↔ Azure), présentée comme un **tutoriel pas-à-pas reproductible** : chaque action est illustrée et expliquée pour qu'un débutant puisse **refaire l'ensemble**.
 
 ![Azure](https://img.shields.io/badge/Cloud-Microsoft%20Azure-0078D4)
 ![Region](https://img.shields.io/badge/R%C3%A9gion-Germany%20West%20Central-informational)
 ![Hybrid](https://img.shields.io/badge/Topologie-Hub--Spoke%20Hybride-16A085)
 ![IaC](https://img.shields.io/badge/IaC-Bicep%20%7C%20Azure%20CLI-8E44AD)
-![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions%20(OIDC)-2C3E50)
 
 ---
 
 ## 📑 Sommaire
 
-1. [Contexte & objectifs](#-contexte--objectifs)
-2. [Architecture cible](#️-architecture-cible)
-3. [Périmètre technique](#-périmètre-technique)
-4. [Plan d'adressage IP](#-plan-dadressage-ip)
-5. [Conventions du projet](#-conventions-du-projet)
-6. [Prérequis](#-prérequis)
-7. [Guide de déploiement détaillé & justifié](#-guide-de-déploiement-détaillé--justifié)
-8. [Journal de troubleshooting](#️-journal-de-troubleshooting-err--fix)
-9. [Roadmap](#️-roadmap)
-10. [Stack technique](#-stack-technique)
+- [Contexte & objectifs](#-contexte--objectifs)
+- [Architecture cible](#️-architecture-cible)
+- [Plan d'adressage IP](#-plan-dadressage-ip)
+- [Conventions](#-conventions)
+- **Tutoriel pas-à-pas :**
+  - [Étape 01 — Prérequis & outillage](#-étape-01--prérequis--outillage)
+  - [Étape 02 — Machine virtuelle & Windows Server](#-étape-02--machine-virtuelle--windows-server)
+  - [Étape 03 — Contrôleur de domaine (AD DS · DNS · DHCP)](#-étape-03--contrôleur-de-domaine-ad-ds--dns--dhcp)
+  - [Étape 04 — Réseau Azure Hub-Spoke](#-étape-04--réseau-azure-hub-spoke)
+  - [Étape 05 — Fondations partagées](#-étape-05--fondations-partagées)
+  - [Étape 06 — Azure File Sync](#-étape-06--hybridation-des-fichiers-azure-file-sync)
+  - [Étape 07 — Annuaire AD](#-étape-07--structuration-de-lannuaire-ad)
+  - [Étape 08 — Identité hybride (Entra Connect)](#-étape-08--identité-hybride-entra-connect-cloud-sync)
+- [Roadmap](#️-roadmap)
+- [Stack technique](#-stack-technique)
 
 ---
 
 ## 🎯 Contexte & objectifs
 
-Ce projet simule l'infrastructure d'une PME fictive, **4SKY Group**, qui adopte une architecture **cloud hybride** tout en conservant un datacenter local. Il démontre une maîtrise complète de l'écosystème Microsoft Azure : hybridation réseau et identité, gouvernance, sécurité, compute, data et automatisation DevSecOps.
-
-**Fil conducteur** : chaque décision (région, topologie, tier, protocole…) est **explicitement justifiée**, comme le ferait un architecte cloud dans un dossier de conception.
+Simulation de l'infrastructure d'une PME fictive, **4SKY Group**, adoptant une architecture **cloud hybride** tout en conservant un datacenter local. Chaque décision technique (région, topologie, protocole, tier…) est **justifiée**, et chaque manipulation est **illustrée** pour être reproductible.
 
 ---
 
 ## 🏗️ Architecture cible
 
-### Vue globale de l'infrastructure hybride
+**Vue globale de l'infrastructure hybride :**
 
 ![Architecture cible](Screenshots/Architecture-01-Cible-Hybride.png)
 
-### Chaîne DevSecOps (CI/CD sécurisé)
+**Chaîne DevSecOps (CI/CD sécurisé) :**
 
 ![Architecture DevSecOps](Screenshots/Architecture-02-DevSecOps.png)
 
-> Sources éditables : `Architecture_Cible.drawio` et `Architecture_DevSecOps.drawio` (ouvrables sur [draw.io](https://app.diagrams.net)).
-
----
-
-## 🧩 Périmètre technique
-
-| Domaine | Composants |
-|---|---|
-| **On-Premise (VMware)** | Windows Server 2025 · AD DS · DNS · DHCP · Serveur de fichiers · Agent Azure File Sync · Agent Entra provisioning |
-| **Réseau Azure** | Hub VNet · Spoke VNet · VNet Peering · NSG · Azure Policy · (VPN Gateway, Firewall, Bastion — à venir) |
-| **Identité** | Microsoft Entra ID · Entra Connect **Cloud Sync** (PHS) |
-| **Fondations** | Log Analytics · Key Vault · Storage Account (Blob + Files) |
-| **Compute** | App Service · Static Web Apps · Azure VM · ACR / ACI / ACA *(à venir)* |
-| **Data** | Azure Data Explorer · Event Hubs *(à venir)* |
-| **Edge / Sécurité** | Front Door + WAF · Application Gateway *(à venir)* |
-| **DevSecOps** | GitHub Actions (OIDC) · CodeQL · Trivy · Checkov · SonarQube · OWASP ZAP · Defender · Sentinel *(à venir)* |
-
-### Applications & mapping compute
-
-| Application | Techno | Cible Azure | Justification |
-|---|---|---|---|
-| cybersky | Vite / React | App Service | Site statique PaaS |
-| pulse-x-agency | Next.js | App Service | App Node serveur → PaaS natif |
-| visuance | Vite / React | Static Web Apps | Hébergement statique + CI/CD natif |
-| drox360 | Vite / React | Static Web Apps | Idem |
-| play-to-sky-production | Next.js | Azure VM (IaaS) | Démontrer le compute IaaS |
-| **leads-hub** *(app dédiée créée)* | Conteneur + BDD | ACR → ACI → ACA | Démontrer la chaîne conteneur complète |
-
-> **Pourquoi une 6ᵉ application ?** Les 5 sites sont réels (production) : pour illustrer **ACI** et **ACA** sans y toucher, une application conteneurisée dédiée `leads-hub` est créée. Elle suit le parcours pédagogique **ACR (registre) → ACI (dev/test) → ACA (prod, autoscale)**.
+> Sources éditables : `Architecture_Cible.drawio` et `Architecture_DevSecOps.drawio` ([draw.io](https://app.diagrams.net)).
 
 ---
 
 ## 🌐 Plan d'adressage IP
 
-| Réseau | CIDR | Rôle & justification |
+| Réseau | CIDR | Rôle |
 |---|---|---|
-| LAN On-Premise (VMware) | `192.168.10.0/24` | Réseau local privé, adressage stable et portable |
-| **Hub VNet** | `10.0.0.0/16` | Zone centrale (passerelles, sécurité) |
-| — GatewaySubnet | `10.0.0.0/27` | Nom **imposé** par Azure ; /27 = taille minimale pour la VPN Gateway |
-| — AzureFirewallSubnet | `10.0.1.0/26` | Nom & taille /26 **imposés** par Azure Firewall |
-| — AzureBastionSubnet | `10.0.2.0/26` | Nom & taille /26 **imposés** par Bastion |
-| **Spoke VNet** | `10.1.0.0/16` | Zone des charges applicatives |
-| — snet-appgw | `10.1.1.0/24` | Application Gateway |
-| — snet-appsvc | `10.1.2.0/24` | App Service (intégration VNet) |
-| — snet-vm | `10.1.3.0/24` | Machines virtuelles |
-| — snet-aca | `10.1.4.0/23` | Container Apps (besoin d'un /23 minimum) |
-| — snet-aci | `10.1.6.0/24` | Container Instances |
-| — snet-data | `10.1.7.0/24` | PostgreSQL (subnet délégué) |
-| — snet-pep | `10.1.8.0/24` | Private Endpoints |
+| LAN On-Premise (VMware) | `192.168.10.0/24` | Serveur `.10`, passerelle NAT `.2`, DHCP `.50`–`.200` |
+| **Hub VNet** | `10.0.0.0/16` | GatewaySubnet `/27`, AzureFirewallSubnet `/26`, AzureBastionSubnet `/26` |
+| **Spoke VNet** | `10.1.0.0/16` | snet-appgw `.1.0/24`, appsvc `.2.0/24`, vm `.3.0/24`, aca `.4.0/23`, aci `.6.0/24`, data `.7.0/24`, pep `.8.0/24` |
 
 ---
 
-## 📏 Conventions du projet
+## 📏 Conventions
 
-**Domaine AD** : `4skygroup.local` (NetBIOS `4SKYGROUP`) · **Région Azure** : `Germany West Central`
+**Domaine AD** : `4skygroup.local` (`4SKYGROUP`) · **Région** : `Germany West Central`
+**Nommage** : `rg-4sky-*`, `vnet-4sky-*`, `snet-*`, `nsg-snet-*`, `st4sky*`, `kv-4sky-*`
+**Tags obligatoires** (via Azure Policy) : `project=4sky-hybrid-lab` · `env=lab` · `owner=daryl` · `costCenter=IT`
+**Captures** : `EtapeXX-Tache.png` · erreurs `EtapeXX-ERR_*.png` · corrections `EtapeXX-FIX_*.png`
 
-**Nommage (style Cloud Adoption Framework)** :
-`rg-4sky-<rôle>` · `vnet-4sky-<zone>` · `snet-<usage>` · `nsg-snet-<usage>` · `st4sky<usage>` · `kv-4sky-<id>` · `app-4sky-<app>`
+---
+---
 
-**Étiquettes obligatoires** (imposées par Azure Policy) :
-`project=4sky-hybrid-lab` · `env=lab` · `owner=daryl` · `costCenter=IT`
-
-**Nomenclature des captures** :
-
-| Type | Format |
-|---|---|
-| Étape standard | `EtapeXX-NomDeLaTache.png` |
-| Erreur rencontrée | `EtapeXX-ERR_DescriptionErreur.png` |
-| Solution appliquée | `EtapeXX-FIX_ExplicationSolution.png` |
+# 📘 Tutoriel pas-à-pas
 
 ---
 
-## ⚙️ Prérequis
+## 🧰 Étape 01 — Prérequis & outillage
 
-**Comptes** : abonnement Azure · tenant Microsoft Entra ID · compte GitHub.
-**Poste local** : virtualisation activée (VT-x/AMD-V) · **VMware Workstation Pro** · **ISO Windows Server 2025**.
-**Outils** : Azure CLI · Bicep · Git · Node.js · Docker Desktop · VS Code.
+**But :** préparer les comptes, les outils et le poste de virtualisation avant tout déploiement.
+**Choix justifiés :** VMware Workstation Pro (pro, gratuit perso) plutôt que VirtualBox ; Azure CLI + Bicep (reproductibilité/IaC) plutôt que le portail seul ; alerte de budget créée **en premier** pour protéger le crédit.
 
----
+### 1. Installer la chaîne d'outils
+Dans **PowerShell** :
+```powershell
+winget install Microsoft.AzureCLI      # Azure CLI
+winget install OpenJS.NodeJS.LTS        # Node.js
+winget install Docker.DockerDesktop     # Docker
+winget install Git.Git                  # Git
+```
+Puis **rouvrir le terminal** et vérifier les versions :
+```powershell
+git --version ; node --version ; docker --version
+```
+![Vérification des outils](Screenshots/Etape01-OutilsVersions.png)
+> ✅ *Git, Node et Docker répondent : la base est installée. (Le « docker non reconnu » au 1ᵉʳ essai est normal — voir Étape 06 du troubleshooting : il faut rouvrir le terminal.)*
 
-## 🚀 Guide de déploiement détaillé & justifié
+### 2. Installer Bicep et vérifier Azure CLI
+```powershell
+az bicep install
+az version ; az bicep version
+```
+![Azure CLI et Bicep](Screenshots/Etape01-AzCliVersion.png)
+> ✅ *Azure CLI 2.87 et Bicep sont opérationnels. Bicep est intégré à la CLI (`az bicep`), il n'existe pas en commande autonome.*
 
----
+### 3. Se connecter à Azure
+```powershell
+az login
+az account show --output table
+```
+![Connexion Azure](Screenshots/Etape01-AzLogin.png)
+> ✅ *Connexion réussie et abonnement actif affiché. Si tu obtiens une erreur MFA `AADSTS50076`, utilise `az login --tenant <id>` (voir troubleshooting).*
 
-### ✅ Étape 01 — Prérequis & outillage
+### 4. Tester Docker
+```powershell
+docker run hello-world
+```
+![Docker Hello World](Screenshots/Etape01-DockerHelloWorld.png)
+> ✅ *« Hello from Docker! » confirme que le moteur tourne.*
 
-**Objectif** : préparer les comptes, le poste de virtualisation et la chaîne d'outils avant tout déploiement.
+### 5. Installer VMware Workstation Pro
+Télécharger **gratuitement** depuis le portail **Broadcom** (section *Free Software Downloads*), version **Windows 26H1**, puis installer (options par défaut, licence « Personal Use »).
+![VMware installé](Screenshots/Etape01-VMwareInstalle.png)
+> ✅ *VMware Workstation Pro installé — il jouera le rôle d'hyperviseur du datacenter On-Premise.*
 
-**Pourquoi ces choix ?**
-- **VMware Workstation Pro** plutôt que VirtualBox : outil de virtualisation **professionnel** (proche de la famille vSphere), snapshots robustes, meilleures performances réseau — et **gratuit pour l'usage personnel** depuis fin 2024.
-- **Azure CLI + Bicep** plutôt que le portail seul : **reproductibilité** et **Infrastructure as Code**, alignés avec la démarche DevSecOps du projet.
-- **Alerte de budget créée en premier** : garde-fou indispensable, le crédit se consomme vite (VPN Gateway, Application Gateway, Data Explorer…).
-
-**Réalisation** : installation via `winget` (Azure CLI, Node, Docker, Git), `az bicep install`, connexion `az login`, puis vérification.
-
-| Outils installés | Connexion Azure |
-|---|---|
-| ![Versions des outils](Screenshots/Etape01-OutilsVersions.png) | ![az login](Screenshots/Etape01-AzLogin.png) |
-
-| Azure CLI / Bicep | Docker fonctionnel |
-|---|---|
-| ![Az CLI](Screenshots/Etape01-AzCliVersion.png) | ![Docker Hello World](Screenshots/Etape01-DockerHelloWorld.png) |
-
-VMware Workstation installé et ISO Windows Server 2025 récupérée :
-
-| VMware installé | ISO Windows Server |
-|---|---|
-| ![VMware](Screenshots/Etape01-VMwareInstalle.png) | ![ISO](Screenshots/Etape01-ISO_WindowsServer.png) |
-
----
-
-### ✅ Étape 02 — Machine virtuelle & Windows Server
-
-**Objectif** : créer la VM `SRV-DC01` qui jouera le rôle du **datacenter On-Premise**.
-
-**Pourquoi ces choix ?**
-- **Specs 4 vCPU / 8 Go / 80 Go / UEFI** : confortables pour un contrôleur de domaine cumulant plusieurs rôles.
-- **Réseau NAT** (et non *bridged*) : **isolation** du réseau physique (crucial car on installera un **serveur DHCP** — en bridged, il distribuerait des adresses sur le vrai réseau maison), **adressage stable et portable**, et accès Internet conservé.
-- **« Install OS later »** au lieu de l'Easy Install : pour **maîtriser chaque écran** d'installation (démarche pédagogique).
-- **Édition Standard « Desktop Experience »** (avec interface graphique) : plus simple à apprendre et administrer que l'édition Core.
-
-**Réalisation** : configuration matérielle de la VM, puis installation de Windows Server 2025 + VMware Tools.
-
-| Configuration matérielle | Serveur opérationnel |
-|---|---|
-| ![Config VM](Screenshots/Etape02-ConfigMaterielleVM.png) | ![Serveur prêt](Screenshots/Etape02-ServeurPret.png) |
+### 6. Récupérer l'ISO Windows Server 2025
+Depuis le **Centre Éducation Azure** (ou l'Evaluation Center) → **Windows Server 2025 Standard — Français — 64 bits**.
+![ISO Windows Server](Screenshots/Etape01-ISO_WindowsServer.png)
+> ✅ *ISO téléchargée. On y ajoutera la clé de produit à l'installation.*
 
 ---
 
-### ✅ Étape 03 — Contrôleur de domaine (AD DS + DNS + DHCP)
+## 🖥️ Étape 02 — Machine virtuelle & Windows Server
 
-**Objectif** : transformer `SRV-DC01` en cœur de l'annuaire d'entreprise.
+**But :** créer la VM `SRV-DC01` (le datacenter local).
+**Choix justifiés :** réseau **NAT** (et non *bridged*) pour **isoler** le futur DHCP du réseau maison et garder un adressage stable ; édition **Desktop Experience** (interface graphique) pour l'apprentissage ; « installer l'OS plus tard » pour **maîtriser chaque écran**.
 
-**Pourquoi ces choix ?**
-- **IP statique** (`192.168.10.10`) : un contrôleur de domaine **doit** avoir une adresse fixe (tout le domaine s'y adresse).
-- **DNS pointant vers lui-même** : AD DS repose entièrement sur le DNS ; le DC doit se résoudre via son propre service DNS.
-- **Redirecteurs DNS** (`8.8.8.8`, `1.1.1.1`) : permettent au DC de résoudre les noms **externes** (Internet) tout en restant maître de sa zone locale.
-- **Étendue DHCP `.50`–`.200`** : on réserve `.1`–`.49` (infra/IP fixes) et `.201`–`.254` (marge).
-- **Autorisation DHCP dans AD** : un serveur DHCP non autorisé **refuse** de distribuer — sécurité anti-DHCP pirate.
+### 1. Configurer le matériel de la VM
+Dans VMware : **New Virtual Machine → Typical → I will install the OS later**. Réglages : **4 vCPU · 8 Go RAM · 80 Go · UEFI · carte réseau NAT**, et monter l'ISO Windows Server dans le lecteur CD/DVD.
+![Configuration matérielle de la VM](Screenshots/Etape02-ConfigMaterielleVM.png)
+> ✅ *La VM est dimensionnée et prête à démarrer sur l'ISO.*
 
-**Réalisation** : réseau NAT aligné sur `192.168.10.0/24`, IP statique, renommage, promotion en nouvelle forêt `4skygroup.local`, mot de passe DSRM, redirecteurs DNS, puis rôle DHCP.
-
-| Réseau NAT | IP statique | Renommage |
-|---|---|---|
-| ![NAT](Screenshots/Etape03-ReseauNAT.png) | ![IP statique](Screenshots/Etape03-IPStatique.png) | ![Renommage](Screenshots/Etape03-RenommagePC.png) |
-
-| Rôle AD DS | Nouvelle forêt | Mot de passe DSRM |
-|---|---|---|
-| ![AD DS](Screenshots/Etape03-AjoutRoleADDS.png) | ![Forêt](Screenshots/Etape03-NouvelleForet.png) | ![DSRM](Screenshots/Etape03-MotDePasseDSRM.png) |
-
-| Promotion | Connexion au domaine | Redirecteurs DNS |
-|---|---|---|
-| ![Promotion](Screenshots/Etape03-PromotionInstall.png) | ![Connexion domaine](Screenshots/Etape03-ConnexionDomaine.png) | ![Redirecteurs](Screenshots/Etape03-RedirecteursDNS.png) |
-
-**DHCP** — rôle, autorisation dans AD, étendue et vérification :
-
-| Rôle DHCP | Autorisation AD | Étendue | Vérification |
-|---|---|---|---|
-| ![Rôle DHCP](Screenshots/Etape03-AjoutRoleDHCP.png) | ![Autorisation](Screenshots/Etape03-AutorisationDHCP.png) | ![Étendue](Screenshots/Etape03-EtendueDHCP.png) | ![Vérif DHCP](Screenshots/Etape03-VerifDHCP.png) |
-
-> 🛠️ Deux incidents rencontrés à cette étape (perte d'accès Internet, erreurs `dcdiag`) sont documentés dans le [journal de troubleshooting](#️-journal-de-troubleshooting-err--fix).
+### 2. Installer Windows Server et se connecter
+Démarrer la VM → installer **Windows Server 2025 Standard (Expérience de bureau)** → définir le mot de passe Administrateur → installer **VMware Tools**.
+![Serveur opérationnel](Screenshots/Etape02-ServeurPret.png)
+> ✅ *Bureau de Windows Server 2025 + Gestionnaire de serveur : l'OS est installé et fonctionnel.*
 
 ---
 
-### ✅ Étape 04 — Réseau Azure Hub-Spoke
+## 🧭 Étape 03 — Contrôleur de domaine (AD DS · DNS · DHCP)
 
-**Objectif** : bâtir le réseau cloud, gouverné et segmenté.
+**But :** faire de `SRV-DC01` le cœur d'identité de l'entreprise.
+**Choix justifiés :** **IP statique** (un DC doit être joignable à une adresse fixe) ; **DNS pointant vers lui-même** (AD repose sur le DNS) ; **redirecteurs DNS** pour résoudre Internet ; **autorisation DHCP dans AD** (sécurité anti-DHCP pirate).
 
-**Pourquoi ces choix ?**
-- **Topologie Hub-Spoke** plutôt qu'un VNet unique : standard **entreprise** (isolation, mutualisation des services centraux, aligné AZ-700).
-- **Région Germany West Central** : après le blocage de *West Europe* (saturée) et l'écart de *France Central* (dispo SKU compute limitée), GWC offre une **région mature, ouverte, avec un large catalogue de SKU** et la **conformité UE/RGPD**.
-- **Azure Policy** (`Allowed locations` + `Require a tag on resources`) : **gouvernance automatisée** — empêche tout déploiement hors région autorisée et impose l'étiquette `project` (traçabilité/FinOps).
-- **Un NSG par sous-réseau** : segmentation en **moindre privilège** (ex. RDP autorisé uniquement depuis le LAN On-Prem).
-- **Étiquettes systématiques** : suivi des coûts et de la propriété des ressources.
+### 1. Aligner le réseau NAT sur 192.168.10.0/24
+Dans VMware : **Éditeur de réseau virtuel → VMnet8 (NAT)** → sous-réseau `192.168.10.0/24`, passerelle `192.168.10.2`.
+![Réseau NAT](Screenshots/Etape03-ReseauNAT.png)
+> ✅ *Le réseau virtuel correspond désormais à notre plan d'adressage.*
 
-**Réalisation** : RG réseau, Hub VNet + subnets, Spoke VNet + subnets, peering, policies, NSG (dont automatisation par script Bash `create-nsg-spoke.sh`).
+### 2. Attribuer une IP statique au serveur
+Dans la VM : `ncpa.cpl` → Ethernet0 → IPv4 : IP `192.168.10.10`, masque `255.255.255.0`, passerelle `192.168.10.2`, **DNS préféré = 192.168.10.10** (lui-même).
+![IP statique](Screenshots/Etape03-IPStatique.png)
+> ✅ *Le serveur a une adresse fixe et se pointe vers son propre DNS (prérequis d'un DC).*
 
-| Contexte Azure | RG réseau | Policies |
-|---|---|---|
-| ![Contexte](Screenshots/Etape04-Contexte%20Azure.png) | ![RG réseau](Screenshots/Etape04-RGReseau.png) | ![Policies](Screenshots/Etape04-Policies.png) |
+### 3. Renommer le serveur
+**Gestionnaire de serveur → Serveur local → Nom d'ordinateur → `SRV-DC01`** → redémarrer.
+![Renommage](Screenshots/Etape03-RenommagePC.png)
+> ✅ *Nom clair et cohérent avant la promotion en DC.*
 
-| Hub VNet | Spoke VNet | Peering |
-|---|---|---|
-| ![Hub](Screenshots/Etape04-HubVNet.png) | ![Spoke](Screenshots/Etape04-SpokeVNet.png) | ![Peering](Screenshots/Etape04-Peering.png) |
+### 4. Installer le rôle AD DS
+**Gérer → Ajouter des rôles → Services AD DS**.
+![Rôle AD DS](Screenshots/Etape03-AjoutRoleADDS.png)
+> ✅ *Le rôle Active Directory Domain Services est installé.*
 
-| NSG (VM) | NSG via script | Vérif NSG | Vérif peering |
-|---|---|---|---|
-| ![NSG VM](Screenshots/Etape04-NSG-vm.png) | ![NSG script](Screenshots/Etape04-NSG-script.png) | ![Vérif NSG](Screenshots/Etape04-VerifNSG.png) | ![Vérif peering](Screenshots/Etape04-VerifPeering.png) |
+### 5. Promouvoir en nouvelle forêt
+Bannière ⚠️ → **Promouvoir ce serveur en contrôleur de domaine → Ajouter une nouvelle forêt** → nom `4skygroup.local`.
+![Nouvelle forêt](Screenshots/Etape03-NouvelleForet.png)
+> ✅ *Création de la forêt `4skygroup.local` (NetBIOS `4SKYGROUP`).*
 
-> 💡 **Automatisation** : les NSG `aci`, `data` et `pep` sont créés et associés via le script [`create-nsg-spoke.sh`](create-nsg-spoke.sh) — première brique d'Infrastructure as Code du projet.
+### 6. Définir le mot de passe DSRM
+Niveaux fonctionnels **Windows Server 2025**, **Serveur DNS** coché, mot de passe **DSRM** (mode restauration) à conserver.
+![Mot de passe DSRM](Screenshots/Etape03-MotDePasseDSRM.png)
+> ✅ *Le DSRM sert à réparer l'annuaire en cas de sinistre — à ne pas perdre.*
+
+### 7. Lancer la promotion
+Vérification des prérequis → **Installer** (le serveur redémarre automatiquement).
+![Installation de la promotion](Screenshots/Etape03-PromotionInstall.png)
+> ✅ *La configuration s'installe ; les avertissements affichés sont normaux.*
+
+### 8. Se connecter au domaine
+Après reboot, connexion en **`4SKYGROUP\Administrateur`**.
+![Connexion au domaine](Screenshots/Etape03-ConnexionDomaine.png)
+> ✅ *Ton compte est devenu un compte **de domaine** : AD DS est actif (`DomainMode = Windows2025Domain`).*
+
+### 9. ⚠️ Incident : plus d'accès Internet
+En pointant le DNS vers lui-même, le serveur ne résout plus les noms externes.
+![ERR — plus d'Internet](Screenshots/Etape03-ERR_PasInternet.png)
+> ❌ *Symptôme normal : le DNS local ne connaît que `4skygroup.local`, pas `google.com`.*
+
+### 10. FIX : ajouter des redirecteurs DNS
+```powershell
+Set-DnsServerForwarder -IPAddress 8.8.8.8, 1.1.1.1
+```
+![Redirecteurs DNS](Screenshots/Etape03-RedirecteursDNS.png)
+> 🔧 *On dit au DNS : « si tu ne connais pas un nom, demande à un annuaire public ».*
+
+### 11. FIX confirmé : Internet rétabli
+```powershell
+Resolve-DnsName www.google.com
+```
+![FIX — Internet rétabli](Screenshots/Etape03-FIX_Internet.png)
+> ✅ *La résolution externe refonctionne, proprement, via notre propre DNS.*
+
+### 12. ⚠️ Incident : erreurs dcdiag après promotion
+```powershell
+dcdiag /q
+```
+![ERR — dcdiag](Screenshots/Etape03-ERR_dcdiag.png)
+> ❌ *Erreurs transitoires d'un DC tout neuf (SYSVOL/DNS) + Secure Boot cosmétique.*
+
+### 13. FIX : forcer l'enregistrement et vérifier les partages
+```powershell
+ipconfig /registerdns ; nltest /dsregdns ; Restart-Service Netlogon
+net share
+```
+![Vérification des partages](Screenshots/Etape03-VerifPartages.png)
+> 🔧 *Les partages `SYSVOL` et `NETLOGON` sont présents → l'annuaire est fonctionnel.*
+
+### 14. Installer le rôle DHCP
+**Gérer → Ajouter des rôles → Serveur DHCP**.
+![Rôle DHCP](Screenshots/Etape03-AjoutRoleDHCP.png)
+> ✅ *Le rôle DHCP est ajouté (la « réceptionniste » qui distribue les adresses).*
+
+### 15. Autoriser le DHCP dans Active Directory
+Bannière ⚠️ → **Terminer la configuration DHCP**.
+![Autorisation DHCP](Screenshots/Etape03-AutorisationDHCP.png)
+> ✅ *Étape obligatoire : un DHCP non autorisé refuse de distribuer des adresses.*
+
+### 16. Créer l'étendue d'adresses
+**Outils → DHCP → IPv4 → Nouvelle étendue** : `LAN-OnPrem`, plage `192.168.10.50`–`.200`, passerelle `192.168.10.2`, DNS `192.168.10.10`.
+![Étendue DHCP](Screenshots/Etape03-EtendueDHCP.png)
+> ✅ *Plage `.50`–`.200` (on réserve les basses/hautes adresses pour l'infra).*
+
+### 17. Vérifier le DHCP
+```powershell
+Get-DhcpServerInDC ; Get-DhcpServerv4Scope
+```
+![Vérification DHCP](Screenshots/Etape03-VerifDHCP.png)
+> ✅ *Serveur **autorisé** et étendue `LAN-OnPrem` **active** → On-Premise complet (AD DS + DNS + DHCP).*
 
 ---
 
-### ✅ Étape 05 — Fondations partagées
+## 🌐 Étape 04 — Réseau Azure Hub-Spoke
 
-**Objectif** : poser les services de plateforme (sécurité, monitoring, stockage).
+**But :** bâtir le réseau cloud, gouverné et segmenté.
+**Choix justifiés :** **Hub-Spoke** (standard entreprise, aligné AZ-700) ; **Germany West Central** (région mature, dispo SKU, UE/RGPD — après le blocage de West Europe et le souci SKU de France Central) ; **Azure Policy** pour imposer région et tags ; **un NSG par subnet** (moindre privilège).
 
-**Pourquoi ces choix ?**
-- **RG partagé dédié** : séparation des cycles de vie (démarche *landing zone*).
-- **Log Analytics** : point de collecte central pour tous les journaux et métriques.
-- **Key Vault en modèle RBAC** (et non *access policies*) : approche **moderne et granulaire** recommandée par Microsoft.
-- **Storage Account en StorageV2** (et non « Blob » pur) : indispensable car il gère **à la fois Blob et Files** — les partages de fichiers étant requis pour Azure File Sync.
-- **Redondance LRS** : la moins chère, suffisante pour un lab.
+### 1. Vérifier le contexte Azure
+```powershell
+az account show --output table
+```
+![Contexte Azure](Screenshots/Etape04-Contexte%20Azure.png)
+> ✅ *On confirme le bon abonnement avant de créer des ressources.*
 
-| RG partagé | Log Analytics | Key Vault | Storage |
-|---|---|---|---|
-| ![RG shared](Screenshots/Etape05-RGShared.png) | ![Log Analytics](Screenshots/Etape05-LogAnalytics.png) | ![Key Vault](Screenshots/Etape05-KeyVault.png) | ![Storage](Screenshots/Etape05-Storage.png) |
+### 2. Créer le Resource Group réseau (avec tags)
+Portail → **Groupes de ressources → Créer** : `rg-4sky-network`, région **Germany West Central**, 4 tags.
+![RG réseau](Screenshots/Etape04-RGReseau.png)
+> ✅ *Conteneur logique du réseau, correctement étiqueté.*
+
+### 3. Appliquer les Azure Policy
+**Policy → Assignments** : `Allowed locations` = Germany West Central, et `Require a tag on resources` = `project`.
+![Azure Policy](Screenshots/Etape04-Policies.png)
+> ✅ *Gouvernance active : impossible de déployer hors région, ni sans le tag `project`.*
+
+### 4. Créer le Hub VNet
+**Réseaux virtuels → Créer** : `vnet-4sky-hub` `10.0.0.0/16` + `GatewaySubnet`, `AzureFirewallSubnet`, `AzureBastionSubnet` (noms imposés par Azure).
+![Hub VNet](Screenshots/Etape04-HubVNet.png)
+> ✅ *Le Hub héberge les services centraux (VPN, pare-feu, Bastion).*
+
+### 5. Créer le Spoke VNet
+`vnet-4sky-spoke` `10.1.0.0/16` + subnets applicatifs (`snet-appgw`, `snet-vm`, `snet-aca`…).
+![Spoke VNet](Screenshots/Etape04-SpokeVNet.png)
+> ✅ *Le Spoke accueille les charges applicatives.*
+
+### 6. Appairer Hub et Spoke (peering)
+**Hub → Appairages → Ajouter** (crée les deux sens).
+![Peering](Screenshots/Etape04-Peering.png)
+> ✅ *Une « route privée » relie les deux VNets sans passer par Internet.*
+
+### 7. Vérifier le peering
+![Vérification du peering](Screenshots/Etape04-VerifPeering.png)
+> ✅ *État « Connecté » des deux côtés.*
+
+### 8. Créer un NSG avec une règle (subnet VM)
+`nsg-snet-vm` + règle **Allow-RDP-from-OnPrem** (source `192.168.10.0/24`, port 3389), associée à `snet-vm`.
+![NSG VM](Screenshots/Etape04-NSG-vm.png)
+> ✅ *Seul le LAN On-Prem peut faire du RDP — pas Internet.*
+
+### 9. Automatiser les autres NSG (script Bash)
+Script [`create-nsg-spoke.sh`](create-nsg-spoke.sh) → crée et associe `nsg-snet-aci/data/pep`.
+![NSG via script](Screenshots/Etape04-NSG-script.png)
+> ✅ *Première brique d'Infrastructure as Code (boucle + tags + association).*
+
+### 10. Vérifier les NSG
+![Vérification des NSG](Screenshots/Etape04-VerifNSG.png)
+> ✅ *Chaque subnet est protégé par son NSG → réseau segmenté et gouverné.*
 
 ---
 
-### ✅ Étape 06 — Hybridation des fichiers (Azure File Sync)
+## 🧱 Étape 05 — Fondations partagées
 
-**Objectif** : synchroniser un dossier du serveur local avec le cloud, en bidirectionnel.
+**But :** poser les services de plateforme (sécurité, monitoring, stockage).
+**Choix justifiés :** RG partagé dédié (cycles de vie séparés) ; Key Vault en **RBAC** (moderne) ; Storage en **StorageV2** (gère Blob **et** Files, requis pour File Sync) ; redondance **LRS** (économique).
 
-**Pourquoi ces choix ?**
-- **Azure File Sync** plutôt qu'une copie manuelle : **synchronisation continue bidirectionnelle** + **cloud tiering** (déchargement des vieux fichiers vers Azure pour économiser le disque local).
-- **Fonctionne en HTTPS** : **aucun VPN requis**, ce qui simplifie et sécurise l'hybridation.
+### 1. Créer le RG partagé
+`rg-4sky-shared`, Germany West Central, 4 tags.
+![RG partagé](Screenshots/Etape05-RGShared.png)
+> ✅ *Conteneur des services communs.*
 
-**Réalisation (côté Azure)** : partage `partage-4sky`, Storage Sync Service `sss-4sky`, groupe de synchronisation.
-**Réalisation (côté serveur)** : dossier `C:\Partages\Entreprise`, agent Azure File Sync, enregistrement du serveur, server endpoint.
+### 2. Log Analytics
+`law-4sky` — collecte centralisée des journaux/métriques.
+![Log Analytics](Screenshots/Etape05-LogAnalytics.png)
+> ✅ *La « tour de contrôle » du monitoring.*
 
-| Partage Azure | Storage Sync Service | Groupe de synchro |
-|---|---|---|
-| ![File Share](Screenshots/Etape06-FileShare.png) | ![Sync Service](Screenshots/Etape06-StorageSyncService.png) | ![Sync Group](Screenshots/Etape06-SyncGroup.png) |
+### 3. Key Vault (modèle RBAC)
+`kv-4sky-daryl01` — coffre-fort des secrets et certificats.
+![Key Vault](Screenshots/Etape05-KeyVault.png)
+> ✅ *Modèle RBAC choisi (plus granulaire que les access policies).*
 
-| Dossier local | Agent installé | Enregistrement serveur | Server endpoint |
-|---|---|---|---|
-| ![Dossier](Screenshots/Etape06-DossierPartage.png) | ![Agent](Screenshots/Etape06-AgentInstalle.png) | ![Enregistrement](Screenshots/Etape06-EnregistrementServeur.png) | ![Endpoint](Screenshots/Etape06-ServerEndpoint.png) |
-
-Synchronisation validée (serveur → Azure) :
-
-![Sync OnPrem vers Azure](Screenshots/Etape06-Sync-OnPrem-vers-Azure.png)
-
-> 🛠️ Point clé documenté : le sens **cloud → serveur** repose sur une **détection différée (jusqu'à 24 h)** — voir le journal de troubleshooting.
+### 4. Storage Account (StorageV2, LRS)
+`st4skyshared01` — Blob + Files.
+![Storage](Screenshots/Etape05-Storage.png)
+> ✅ *StorageV2 confirmé : « Partages de fichiers » disponible → prêt pour Azure File Sync.*
 
 ---
 
-### ✅ Étape 07 — Structuration de l'annuaire AD
+## 🔄 Étape 06 — Hybridation des fichiers (Azure File Sync)
 
-**Objectif** : peupler l'Active Directory avant la synchronisation hybride.
+**But :** synchroniser un dossier du serveur local avec le cloud, en bidirectionnel.
+**Choix justifiés :** File Sync (synchro continue + cloud tiering) plutôt qu'une copie ; **fonctionne en HTTPS → aucun VPN requis**.
 
-**Pourquoi ces choix ?**
-- **Unités d'organisation (OU)** : rangement logique + **délégation** de droits + ciblage des futures **GPO**.
-- **Groupes de sécurité globaux** (`GG_IT`, `GG_RH`, `GG_Marketing`) : gestion des accès **par rôle** plutôt que par utilisateur.
-- **Création par script PowerShell** : reproductible et documenté.
+### 1. Créer le partage Azure Files
+`st4skyshared01 → Partages de fichiers → partage-4sky`.
+![Partage Azure Files](Screenshots/Etape06-FileShare.png)
+> ✅ *Le « côté cloud » du dossier partagé.*
 
+### 2. Créer le Storage Sync Service
+Recherche **Azure File Sync → Créer** : `sss-4sky`.
+![Storage Sync Service](Screenshots/Etape06-StorageSyncService.png)
+> ✅ *Le service qui orchestre la synchronisation.*
+
+### 3. Créer le groupe de synchronisation
+`sss-4sky → Groupes de synchronisation → sg-partage-4sky` (relié au partage).
+![Groupe de synchronisation](Screenshots/Etape06-SyncGroup.png)
+> ✅ *Le « cloud endpoint » (ancre côté Azure) est défini.*
+
+### 4. Préparer le dossier local (serveur)
+```powershell
+New-Item -Path "C:\Partages\Entreprise" -ItemType Directory -Force
+Install-WindowsFeature FS-FileServer -IncludeManagementTools
+New-SmbShare -Name "Entreprise" -Path "C:\Partages\Entreprise" -FullAccess "4SKYGROUP\Administrateur"
+```
+![Dossier local](Screenshots/Etape06-DossierPartage.png)
+> ✅ *Le dossier `C:\Partages\Entreprise` sera synchronisé.*
+
+### 5. Installer l'agent Azure File Sync
+Télécharger `StorageSyncAgent_WS2025.msi` (Microsoft Download Center) et l'installer.
+![Agent installé](Screenshots/Etape06-AgentInstalle.png)
+> ✅ *Le « robot de synchro » est en place sur le serveur.*
+
+### 6. Enregistrer le serveur
+À la fin de l'install, **Server Registration** → connexion Azure + choix de `sss-4sky`.
+![Enregistrement du serveur](Screenshots/Etape06-EnregistrementServeur.png)
+> ✅ *Le serveur est lié au service de synchronisation.*
+
+### 7. Créer le server endpoint
+`sg-partage-4sky → Ajouter un point de terminaison de serveur` : `SRV-DC01`, chemin `C:\Partages\Entreprise`.
+![Server endpoint](Screenshots/Etape06-ServerEndpoint.png)
+> ✅ *On déclare : « ce dossier local = copie du partage cloud ».*
+
+### 8. Tester la synchronisation (serveur → cloud)
+Créer un fichier dans `C:\Partages\Entreprise`, forcer si besoin `Restart-Service FileSyncSvc`, puis vérifier dans le partage Azure.
+![Test de synchronisation](Screenshots/Etape06-Sync-OnPrem-vers-Azure.png)
+> ✅ *Le fichier créé en local **remonte dans Azure** → 1er flux hybride réel validé.*
+
+---
+
+## 👥 Étape 07 — Structuration de l'annuaire AD
+
+**But :** peupler l'AD avant la synchro hybride.
+**Choix justifiés :** OU pour ranger/déléguer/cibler les GPO ; groupes de sécurité pour gérer les accès **par rôle** ; création **par script** (reproductible).
+
+### 1. Créer OU, groupes et utilisateurs
+```powershell
+Import-Module ActiveDirectory
+$base = "DC=4skygroup,DC=local"
+New-ADOrganizationalUnit -Name "4SKY" -Path $base
+$ou = "OU=4SKY,$base"
+"Utilisateurs","Groupes","Serveurs","Postes" | % { New-ADOrganizationalUnit -Name $_ -Path $ou }
+"GG_IT","GG_RH","GG_Marketing" | % { New-ADGroup -Name $_ -GroupScope Global -Path "OU=Groupes,$ou" }
+$pwd = ConvertTo-SecureString "P@ssw0rd2026!" -AsPlainText -Force
+New-ADUser -Name "Daryl Ngassa" -SamAccountName "d.ngassa" -UserPrincipalName "d.ngassa@4skygroup.local" -Path "OU=Utilisateurs,$ou" -AccountPassword $pwd -Enabled $true
+New-ADUser -Name "Thierno Ibrahima" -SamAccountName "t.ibrahima" -UserPrincipalName "t.ibrahima@4skygroup.local" -Path "OU=Utilisateurs,$ou" -AccountPassword $pwd -Enabled $true
+```
 ![Structure AD](Screenshots/Etape07-StructureAD.png)
+> ✅ *OU, groupes et utilisateurs de test créés → l'annuaire a du contenu à synchroniser.*
 
 ---
 
-### ✅ Étape 08 — Identité hybride (Entra Connect Cloud Sync)
+## 🔐 Étape 08 — Identité hybride (Entra Connect Cloud Sync)
 
-**Objectif** : synchroniser l'annuaire local vers Microsoft Entra ID.
+**But :** synchroniser l'AD local vers Microsoft Entra ID.
+**Choix justifiés :** **Cloud Sync** (agent léger, cloud-managé, recommandé pour forêt unique) plutôt que Connect Sync ; **PHS** (même mot de passe local/cloud) ; **suffixe UPN routable** (obligatoire, `.local` ne l'est pas) ; **filtrage sur l'OU 4SKY**.
 
-**Pourquoi ces choix ?**
-- **Cloud Sync** plutôt que Connect Sync (classique) : **agent léger**, **piloté depuis le cloud**, idéal pour une **forêt unique** — et c'est la voie **recommandée par Microsoft** (Connect Sync disparaît d'ailleurs du Download Center).
-- **PHS (Password Hash Sync)** : **même mot de passe** en local et dans le cloud, méthode la plus simple et résiliente.
-- **Suffixe UPN routable** (`...onmicrosoft.com`) : obligatoire car `@4skygroup.local` n'est **pas routable** et ne peut pas être synchronisé.
-- **Filtrage sur l'OU 4SKY** : ne remonter que les objets pertinents (pas les comptes système).
+### 1. Ajouter un suffixe UPN routable et mettre à jour les UPN
+Ajouter le suffixe `...onmicrosoft.com` (Domaines et approbations AD, nœud racine), puis :
+```powershell
+$suffix = "armelngassa730gmail.onmicrosoft.com"
+Get-ADUser -Filter * -SearchBase "OU=Utilisateurs,OU=4SKY,DC=4skygroup,DC=local" |
+  ForEach-Object { Set-ADUser $_ -UserPrincipalName ("$($_.SamAccountName)@$suffix") }
+```
+![Suffixe UPN](Screenshots/Etape08-SuffixeUPN.png)
+> ✅ *Les UPN deviennent routables → synchronisables vers Entra ID.*
 
-**Réalisation** : suffixe UPN, agent d'approvisionnement, configuration Cloud Sync (scope OU + PHS), activation.
+### 2. Installer l'agent d'approvisionnement Cloud Sync
+Depuis **entra.microsoft.com → Microsoft Entra Connect → Cloud Sync**, télécharger l'agent, l'installer, créer le **gMSA** (compte `4SKYGROUP\Administrateur`) et connecter la forêt `4skygroup.local`.
+![Agent Cloud Sync](Screenshots/Etape08-AgentCloudSyncOK.png)
+> ✅ *Agent installé et forêt connectée (statut « active »).*
 
-| Suffixe UPN | Agent Cloud Sync OK | Configuration |
-|---|---|---|
-| ![Suffixe UPN](Screenshots/Etape08-SuffixeUPN.png) | ![Agent OK](Screenshots/Etape08-AgentCloudSyncOK.png) | ![Config](Screenshots/Etape08-ConfigCloudSync.png) |
+### 3. Créer la configuration de synchronisation
+**Nouvelle configuration → Synchronisation d'AD sur Microsoft Entra ID** → domaine `4skygroup.local`, **PHS activé**.
+![Configuration Cloud Sync](Screenshots/Etape08-ConfigCloudSync.png)
+> ✅ *Sens AD → Entra ID, avec synchronisation des mots de passe.*
 
-| Filtre OU | Configuration activée | Vérification dans Entra ID |
-|---|---|---|
-| ![Filtre OU](Screenshots/Etape08-FiltreOU.png) | ![Config activée](Screenshots/Etape08-ConfigActivee.png) | ![Vérif Entra](Screenshots/Etape08-VerifSyncEntra.png) |
+### 4. Cibler l'OU 4SKY (filtre d'étendue)
+**Filtres d'étendue** → OU `OU=4SKY,DC=4skygroup,DC=local`.
+![Filtre OU](Screenshots/Etape08-FiltreOU.png)
+> ✅ *Seuls les objets de l'OU 4SKY remontent (pas les comptes système).*
 
-Résultat : **2 utilisateurs + 3 groupes** synchronisés vers Entra ID.
+### 5. Activer la configuration
+**Vérifier et activer**.
+![Configuration activée](Screenshots/Etape08-ConfigActivee.png)
+> ✅ *La synchronisation démarre — **USER 2 / GROUP 3** provisionnés.*
 
-| Utilisateurs synchronisés | Détails |
-|---|---|
-| ![Vérif 2](Screenshots/Etape08-VerifSyncEntra02.png) | ![Vérif 3](Screenshots/Etape08-VerifSyncEntra03.png) |
+### 6. Vérifier dans Entra ID
+**Entra ID → Utilisateurs**.
+![Vérification Entra ID](Screenshots/Etape08-VerifSyncEntra.png)
+> ✅ *Les utilisateurs apparaissent dans le cloud.*
+
+![Utilisateurs synchronisés](Screenshots/Etape08-VerifSyncEntra02.png)
+> ✅ *`d.ngassa` et `t.ibrahima` avec UPN `...onmicrosoft.com`.*
+
+![Détail de synchronisation](Screenshots/Etape08-VerifSyncEntra03.png)
+> ✅ *« Synchronisation locale : Oui » → identité hybride opérationnelle.*
 
 ---
-
-### 🔜 Étape 09 — Compute (à venir)
-
-Déploiement des applications sur **App Service (B1)**, Static Web Apps, VM et conteneurs (ACR → ACI → ACA).
-
----
-
-## 🛠️ Journal de troubleshooting (ERR → FIX)
-
-Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obstacle est documenté avec sa cause et sa solution.
-
-| # | Problème | Cause | Solution |
-|---|---|---|---|
-| 1 | `az login` — `AADSTS50076 InteractionRequired` | MFA activée, jeton sans « tampon MFA » | `az logout` + `az login --tenant <id>` avec MFA |
-| 2 | `docker : terme non reconnu` | PATH non rechargé + credential helper absent | Rouvrir le terminal / redémarrer + `...\Docker\resources\bin` au PATH |
-| 3 | Création VNet refusée — `RequestDisallowedByAzure` | *West Europe* n'accepte plus de nouveaux clients (saturation) | Bascule vers **Germany West Central** |
-| 4 | Broadcom : « No data found » (VMware) | Compte non habilité aux téléchargements gratuits | Section **« Free Software Downloads »** |
-| 5 | Entra Connect introuvable sur le Download Center | Distribution déplacée par Microsoft | Téléchargement via le **Microsoft Entra Admin Center** |
-| 6 | Liste des domaines vide (Cloud Sync) | Agent pas encore « actif » côté cloud | Attendre l'enregistrement + rafraîchir |
-| 7 | `dcdiag` en erreur après promotion du DC | Réplication SYSVOL / DNS transitoires | `ipconfig /registerdns` + `Restart-Service Netlogon` |
-| 8 | Fichier cloud non répliqué vers le serveur | Détection des changements directs (jusqu'à 24 h) | `Invoke-AzStorageSyncChangeDetection` |
-
-**Illustrations (Étape 03)** — perte puis retour de l'accès Internet :
-
-| ERR — plus d'Internet | FIX — Internet rétabli | ERR — dcdiag |
-|---|---|---|
-| ![ERR Internet](Screenshots/Etape03-ERR_PasInternet.png) | ![FIX Internet](Screenshots/Etape03-FIX_Internet.png) | ![ERR dcdiag](Screenshots/Etape03-ERR_dcdiag.png) |
-
 ---
 
 ## 🗺️ Roadmap
@@ -363,13 +466,13 @@ Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obsta
 - [x] Identité hybride (Entra Connect)
 - [ ] Compute : App Service, Static Web Apps, VM
 - [ ] Conteneurs : ACR → ACI → ACA (`leads-hub`)
-- [ ] Connexion hybride : VPN Gateway (Site-to-Site)
+- [ ] VPN Gateway (Site-to-Site)
 - [ ] Data : Azure Data Explorer + Event Hubs
 - [ ] Edge & WAF : Front Door + Application Gateway
 - [ ] Sauvegarde : Recovery Services Vault
-- [ ] DevSecOps : pipeline CI/CD GitHub Actions (OIDC + *shift-left*)
-- [ ] Supervision : Azure Monitor, Application Insights, Sentinel
-- [ ] Document d'Architecture Technique (DAT) complet
+- [ ] DevSecOps : CI/CD GitHub Actions (OIDC + *shift-left*)
+- [ ] Supervision : Azure Monitor, App Insights, Sentinel
+- [ ] Document d'Architecture Technique (DAT)
 
 ---
 
@@ -379,12 +482,12 @@ Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obsta
 **On-Premise** : VMware Workstation Pro · Windows Server 2025 (AD DS, DNS, DHCP, Fichiers)
 **Hybridation** : Azure File Sync · Entra Connect Cloud Sync
 **IaC & outils** : Azure CLI · Bicep · Docker · Node.js · Git · PowerShell · VS Code
-**DevSecOps (à venir)** : GitHub Actions · CodeQL · Dependabot · Trivy · Checkov · SonarQube · OWASP ZAP · Syft · Cosign · Defender for Cloud · Microsoft Sentinel
+**DevSecOps (à venir)** : GitHub Actions · CodeQL · Trivy · Checkov · SonarQube · OWASP ZAP · Defender · Sentinel
 
 ---
 
 ## 👤 Auteur
 
-**Daryl Ngassa** — Projet de préparation à la certification **Microsoft Azure Administrator (AZ-104)**.
+**Daryl Ngassa** — Préparation à la certification **Microsoft Azure Administrator (AZ-104)**.
 
-> 📌 *Documentation maintenue en temps réel. Chaque étape est justifiée et illustrée (dossier `Screenshots/`), et chaque obstacle rencontré est documenté dans le journal de troubleshooting — une démonstration concrète de capacité d'analyse et de résolution.*
+> 📌 *Tutoriel maintenu en temps réel : chaque action est illustrée dans l'ordre, expliquée et justifiée, pour être reproductible par un débutant.*
