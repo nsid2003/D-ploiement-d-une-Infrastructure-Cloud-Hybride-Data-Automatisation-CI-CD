@@ -113,8 +113,8 @@ logs/
 #     sont des dépôts Git séparés. Si tu NE veux PAS les
 #     inclure dans ce dépôt d'infra, décommente ci-dessous :
 # ----------------------------------------------------------
- cybersky/
- drox360/
- play-to-sky-production/
- pulse-x-agency/
- visuance/
+cybersky/
+drox360/
+play-to-sky-production/
+pulse-x-agency/
+visuance/
