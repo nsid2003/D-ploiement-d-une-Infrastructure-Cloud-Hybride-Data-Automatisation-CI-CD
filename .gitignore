@@ -1,0 +1,120 @@
+# ==========================================================
+#  .gitignore — Projet Infrastructure Cloud Hybride 4SKY
+# ==========================================================
+
+# ----------------------------------------------------------
+# 🔐 SECRETS & IDENTIFIANTS  (NE JAMAIS POUSSER)
+# ----------------------------------------------------------
+*.env
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.publishsettings
+*.pubxml
+*.pubxml.user
+credentials.json
+azureauth.json
+sp.json
+serviceprincipal.json
+secrets.*
+*secret*
+*password*
+*.credentials
+
+# Fichiers de paramètres de policy générés localement
+allowed-loc.json
+require-tag.json
+
+# ----------------------------------------------------------
+# ☁️ AZURE / IaC
+# ----------------------------------------------------------
+.azure/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+*.bicepparam.local
+__pycache__/
+
+# ----------------------------------------------------------
+# 🖥️ VMware (artefacts de VM — très lourds)
+# ----------------------------------------------------------
+*.vmdk
+*.vmx
+*.vmxf
+*.vmsd
+*.vmsn
+*.vmem
+*.nvram
+*.vmss
+*.lck/
+*.log
+*.iso
+
+# ----------------------------------------------------------
+# 📦 NODE.JS  (sites web sources : cybersky, drox360, etc.)
+# ----------------------------------------------------------
+node_modules/
+dist/
+build/
+.next/
+out/
+.turbo/
+.cache/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ----------------------------------------------------------
+# 💻 OS & ÉDITEURS
+# ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+.idea/
+*.swp
+*.swo
+*~
+
+# VS Code : on garde la config partagée mais on ignore le local
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ----------------------------------------------------------
+# 🗒️ LOGS & TEMPORAIRES
+# ----------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.old
+logs/
+
+# ==========================================================
+# ✅ CE QUI RESTE VERSIONNÉ (pour mémoire, ne pas ignorer) :
+#   - README.md
+#   - Screenshots/*.png        (documentation illustrée)
+#   - Architecture_*.drawio     (sources éditables)
+#   - Architecture_*.svg
+#   - create-nsg-spoke.sh       (script IaC)
+#
+# ⚠️  Les 5 dossiers d'applications (cybersky, drox360,
+#     play-to-sky-production, pulse-x-agency, visuance)
+#     sont des dépôts Git séparés. Si tu NE veux PAS les
+#     inclure dans ce dépôt d'infra, décommente ci-dessous :
+# ----------------------------------------------------------
+ cybersky/
+ drox360/
+ play-to-sky-production/
+ pulse-x-agency/
+ visuance/
