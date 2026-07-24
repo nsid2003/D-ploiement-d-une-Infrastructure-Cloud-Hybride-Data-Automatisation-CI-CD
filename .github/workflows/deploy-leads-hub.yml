@@ -31,6 +31,12 @@ jobs:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
+      # ÉTAPE DE DEBUG TEMPORAIRE — affiche le subject réel du token OIDC
+      - name: Debug - subject OIDC réel
+        run: |
+          IDTOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value')
+          python3 -c "import sys,base64,json; p=sys.argv[1].split('.')[1]; p+='='*(-len(p)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('SUB =', repr(c.get('sub'))); print('AUD =', repr(c.get('aud'))); print('ISS =', repr(c.get('iss')))" "$IDTOKEN"
+
       - name: Connexion Azure (OIDC)
         uses: azure/login@v2
         with:
