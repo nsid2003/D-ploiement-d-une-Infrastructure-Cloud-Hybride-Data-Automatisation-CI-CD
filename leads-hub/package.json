@@ -1,0 +1,13 @@
+{
+  "name": "leads-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Micro-service de collecte de leads pour 4SKY Group — démonstration ACR / ACI / ACA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
