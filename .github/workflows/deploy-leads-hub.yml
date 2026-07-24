@@ -21,15 +21,16 @@ env:
   ACA_APP: aca-leads-hub
 
 jobs:
-  build-scan-deploy:
-    name: Build, scan de sécurité et déploiement
+  # ─────────────────────────────────────────────
+  # JOB 1 — Construire l'image et la pousser dans l'ACR
+  # ─────────────────────────────────────────────
+  build:
+    name: 🔨 Build & Push
     runs-on: ubuntu-latest
     steps:
-      # 1. Récupérer le code
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
-      # 2. Connexion à Azure via OIDC (aucun mot de passe stocké)
       - name: Connexion Azure (OIDC)
         uses: azure/login@v2
         with:
@@ -37,20 +38,36 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 3. Connexion au registre ACR
       - name: Connexion à l'ACR
         run: az acr login --name "$ACR_NAME"
 
-      # 4. Construire l'image (taguée avec le SHA du commit + latest)
-      - name: Build de l'image
+      - name: Build & push de l'image
         run: |
           docker build \
             -t "$ACR_NAME.azurecr.io/$IMAGE:${{ github.sha }}" \
             -t "$ACR_NAME.azurecr.io/$IMAGE:latest" \
             ./leads-hub
+          docker push --all-tags "$ACR_NAME.azurecr.io/$IMAGE"
 
-      # 5. GATE SÉCURITÉ — scan de vulnérabilités de l'image (Trivy)
-      - name: Scan de sécurité (Trivy)
+  # ─────────────────────────────────────────────
+  # JOB 2 — Gate sécurité : scan de vulnérabilités (dépend de build)
+  # ─────────────────────────────────────────────
+  security-scan:
+    name: 🛡️ Scan sécurité (Trivy)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connexion Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Connexion à l'ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Scan de l'image (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE }}:${{ github.sha }}'
@@ -58,12 +75,22 @@ jobs:
           severity: 'CRITICAL,HIGH'
           exit-code: '0'   # mettre '1' pour BLOQUER le déploiement si vulnérabilité critique
 
-      # 6. Pousser l'image vers l'ACR
-      - name: Push de l'image
-        run: docker push --all-tags "$ACR_NAME.azurecr.io/$IMAGE"
+  # ─────────────────────────────────────────────
+  # JOB 3 — Déploiement sur Azure Container Apps (dépend du scan)
+  # ─────────────────────────────────────────────
+  deploy:
+    name: 🚀 Déploiement ACA
+    needs: security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connexion Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 7. Déployer la nouvelle image sur Azure Container Apps
-      - name: Déploiement sur ACA
+      - name: Déploiement de la nouvelle image
         run: |
           az extension add --name containerapp --upgrade --only-show-errors
           az containerapp update \
