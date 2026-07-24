@@ -25,7 +25,7 @@ jobs:
   # JOB 1 — Construire l'image et la pousser dans l'ACR
   # ─────────────────────────────────────────────
   build:
-    name: 🔨 Build & Push
+    name: Build & Push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du dépôt
@@ -53,7 +53,7 @@ jobs:
   # JOB 2 — Gate sécurité : scan de vulnérabilités (dépend de build)
   # ─────────────────────────────────────────────
   security-scan:
-    name: 🛡️ Scan sécurité (Trivy)
+    name: Scan sécurité (Trivy)
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -79,7 +79,7 @@ jobs:
   # JOB 3 — Déploiement sur Azure Container Apps (dépend du scan)
   # ─────────────────────────────────────────────
   deploy:
-    name: 🚀 Déploiement ACA
+    name: Déploiement ACA
     needs: security-scan
     runs-on: ubuntu-latest
     steps:
