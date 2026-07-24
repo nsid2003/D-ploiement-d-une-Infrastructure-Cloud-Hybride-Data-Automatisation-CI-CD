@@ -25,6 +25,11 @@
   - [Étape 06 — Azure File Sync](#-étape-06--hybridation-des-fichiers-azure-file-sync)
   - [Étape 07 — Annuaire AD](#-étape-07--structuration-de-lannuaire-ad)
   - [Étape 08 — Identité hybride (Entra Connect)](#-étape-08--identité-hybride-entra-connect-cloud-sync)
+  - [Étape 09 — Site web (Static Web Apps)](#-étape-09--premier-site-web-azure-static-web-apps)
+  - [Étape 10 — Compute IaaS (Azure VM)](#-étape-10--compute-iaas-machine-virtuelle-ubuntu)
+  - [Étape 11 — Conteneurs (ACR → ACI → ACA)](#-étape-11--conteneurs-acr--aci--aca)
+  - [Étape 13 — CI/CD DevSecOps (GitHub Actions)](#-étape-13--cicd-devsecops-github-actions)
+- [Journal de troubleshooting](#️-journal-de-troubleshooting-err--fix)
 - [Roadmap](#️-roadmap)
 - [Stack technique](#-stack-technique)
 
@@ -453,6 +458,142 @@ Depuis **entra.microsoft.com → Microsoft Entra Connect → Cloud Sync**, tél�
 > ✅ *« Synchronisation locale : Oui » → identité hybride opérationnelle.*
 
 ---
+
+## 🌐 Étape 09 — Premier site web (Azure Static Web Apps)
+
+**But :** déployer un site statique sur Azure, gratuitement.
+**Choix justifiés :** après inspection, les sites compilent tous en **statique** (Vite `dist/`, Next.js `output: 'export'`) → **Static Web Apps** (tier **gratuit**, CDN global, HTTPS inclus) est le bon service. Déploiement via **jeton** (méthode « Other »), donc **sans modifier le dépôt de production**.
+
+### 1. Resource Group compute + build local
+```powershell
+cd cybersky ; npm install ; npm run build   # produit dist/
+```
+| RG compute | Build local |
+|---|---|
+| ![RG compute](Screenshots/Etape09-RGCompute.png) | ![Build](Screenshots/Etape09-BuildLocal.png) |
+
+### 2. Créer la Static Web App (bataille de gouvernance & région)
+Trois obstacles enchaînés, résolus l'un après l'autre :
+
+| ❌ Policy bloque la région | 🔧 Élargir la policy | ❌ West Europe saturée | 🔧 West US 2 |
+|---|---|---|---|
+| ![ERR policy](Screenshots/Etape09-ERR_PolicyLocation.png) | ![FIX policy](Screenshots/Etape09-FIX_PolicyRegionSWA.png) | ![ERR WE](Screenshots/Etape09-ERR_WestEuropeBloquee.png) | ![FIX WUS2](Screenshots/Etape09-FIX_RegionWestUS2.png) |
+
+> 💡 **Static Web Apps n'existe pas en Germany West Central** → conflit avec la policy « région autorisée ». Comme SWA est un **service global à CDN**, la région de rattachement n'a aucun impact sur la latence → on autorise **West US 2**.
+
+### 3. Déployer le contenu via jeton
+```powershell
+npm install -g @azure/static-web-apps-cli
+swa deploy ./dist --deployment-token "<JETON>" --env production
+```
+| Jeton de déploiement | Déploiement | Site en ligne |
+|---|---|---|
+| ![Jeton](Screenshots/Etape09-JetonDeploiement.png) | ![Deploy](Screenshots/Etape09-Deploiement.png) | ![Site](Screenshots/Etape09-SiteEnLigne.png) |
+> ✅ *Site `cybersky` en ligne sur `*.azurestaticapps.net`, en HTTPS, gratuit.*
+
+---
+
+## 🖥️ Étape 10 — Compute IaaS (machine virtuelle Ubuntu)
+
+**But :** héberger un **vrai site** sur une VM (modèle IaaS).
+**Choix justifiés :** **Ubuntu** plutôt que Windows (moins cher — pas de licence, natif Node) ; VM dans le **spoke** protégée par NSG ; **nginx** pour servir le site ; **suppression après test** (facturé tant qu'elle tourne).
+
+### 1. Créer la VM + accès SSH
+| Création VM | Règle NSG (SSH) | Connexion SSH |
+|---|---|---|
+| ![VM](Screenshots/Etape10-CreationVM.png) | ![NSG SSH](Screenshots/Etape10-InboundNsgVMssh.png) | ![SSH](Screenshots/Etape10-ConnexionSSH.png) |
+
+### 2. Installer nginx et déployer le site (build local → scp)
+```bash
+sudo apt install -y nginx
+# (sur la machine) scp -r ./dist azureuser@<IP>:~/site
+sudo cp -r ~/site/* /var/www/html/ ; sudo systemctl reload nginx
+```
+| nginx | Build play-to-sky | Transfert scp | Déploiement |
+|---|---|---|---|
+| ![nginx](Screenshots/Etape10-InstallNginx.png) | ![build](Screenshots/Etape10-BuildPlayToSky.png) | ![scp](Screenshots/Etape10-TransfertScp.png) | ![deploy](Screenshots/Etape10-DeploiementNginx.png) |
+
+### 3. Ouvrir le port 80 et tester
+| Règle NSG (HTTP) | ❌ Site inaccessible | ✅ Le vrai site sur la VM |
+|---|---|---|
+| ![NSG HTTP](Screenshots/Etape10-NSG-HTTP.png) | ![ERR](Screenshots/Etape10-ERR_SiteInaccessible.png) | ![Site VM](Screenshots/Etape10-SiteReelSurVM.png) |
+> 💡 Timeout dû au **filtrage NSG sur une IP résidentielle dynamique** + au **port dans l'URL** — bon rappel : le port doit correspondre entre l'app, la ressource et l'URL.
+>
+> 🧹 **Après captures : suppression complète** de la VM (+ disque, NIC, IP publique) pour stopper la facturation.
+
+---
+
+## 🐳 Étape 11 — Conteneurs (ACR → ACI → ACA)
+
+**But :** parcourir toute la chaîne conteneur avec une app dédiée, **`leads-hub`** (Node/Express).
+**Choix justifiés :** **ACR** = registre privé ; **ACI** = conteneur unique dev/test (HTTP) ; **ACA** = production (ingress **HTTPS**, autoscale, *scale-to-zero*). Une 6ᵉ app créée exprès pour ne pas toucher aux 5 vrais sites.
+
+### 1. Enregistrer les providers + créer l'ACR
+| Providers | ACR (Basic) |
+|---|---|
+| ![Providers](Screenshots/Etape11-Providers.png) | ![ACR](Screenshots/Etape11-ACR.png) |
+
+### 2. Construire l'image (ACR Tasks bloqué → build local)
+| ❌ ACR Tasks interdits | 🔧 Build local Docker + push |
+|---|---|
+| ![ERR ACR Tasks](Screenshots/Etape11-ERR_ACRTasks.png) | ![FIX Docker](Screenshots/Etape11-FIX_DockerBuildPush.png) |
+> 💡 Les **ACR Tasks** (build cloud) sont **bloqués sur les abonnements gratuits/étudiants** → on **build en local avec Docker** puis on `push`.
+
+### 3. Déployer en ACI puis en ACA
+| ACI (création) | ACI en ligne (HTTP:3000) | ACA (création) | ACA en ligne (HTTPS) |
+|---|---|---|---|
+| ![ACI](Screenshots/Etape11-ACI-Creation.png) | ![ACI live](Screenshots/Etape11-ACI-EnLigne.png) | ![ACA](Screenshots/Etape11-ACA-Creation.png) | ![ACA live](Screenshots/Etape11-ACA-EnLigne.png) |
+> 💡 **ACI** = HTTP, port `:3000` dans l'URL. **ACA** = **HTTPS automatique** via ingress (aucun port dans l'URL). Illustration parfaite du passage dev/test → production.
+
+---
+
+## 🔐 Étape 13 — CI/CD DevSecOps (GitHub Actions)
+
+**But :** automatiser **build → scan sécurité → déploiement** à chaque push, **sans aucun secret** (OIDC).
+**Choix justifiés :** **OIDC** (identité fédérée, zéro mot de passe stocké) ; **pipeline en 3 jobs** liés par `needs` (graphe lisible, gates) ; **Trivy** comme gate de sécurité *shift-left*.
+
+### 1. Identité fédérée + RBAC + secrets GitHub
+| Identité fédérée | RBAC | Secrets GitHub |
+|---|---|---|
+| ![Fed cred](Screenshots/Etape13-IdentiteFederee.png) | ![RBAC](Screenshots/Etape13-IdentiteFedereeRole.png) | ![Secrets](Screenshots/Etape13-GitHubSecrets.png) |
+
+### 2. Le grand troubleshooting OIDC
+| ❌ AADSTS700213 | 🔧 Subject personnalisé |
+|---|---|
+| ![ERR OIDC](Screenshots/Etape13-ERR_OIDC.png) | ![FIX subject](Screenshots/Etape13-FIX_SubjectCustom.png) |
+
+> 💡 **Le piège le plus subtil du projet** : le compte GitHub émet un subject OIDC **personnalisé** contenant les **IDs numériques** :
+> `repo:nsid2003@119935744/D-ploiement-...-CI-CD@1308113981:ref:refs/heads/main`.
+> Une identité fédérée « branche » standard ne matche **jamais**. Diagnostic par **décodage du token OIDC** dans le pipeline, puis identité fédérée **« Autre émetteur »** avec le subject exact.
+
+### 3. Pipeline vert
+![Pipeline vert](Screenshots/Etape13-PipelineVert.png)
+> ✅ *3 jobs enchaînés (**Build & Push → Scan Trivy → Déploiement ACA**), en OIDC, déploiement automatique sur ACA. CI/CD DevSecOps de bout en bout opérationnelle.*
+
+---
+
+## 🛠️ Journal de troubleshooting (ERR → FIX)
+
+Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obstacle est documenté avec sa cause et sa solution.
+
+| # | Étape | Problème | Cause | Solution |
+|---|---|---|---|---|
+| 1 | 01 | `az login` — `AADSTS50076` | MFA activée, jeton sans « tampon MFA » | `az login --tenant <id>` avec MFA |
+| 2 | 01 | `docker` non reconnu | PATH non rechargé + credential helper | Rouvrir terminal / redémarrer + PATH |
+| 3 | 01 | Broadcom « No data found » (VMware) | Compte non habilité | Section *Free Software Downloads* |
+| 4 | 03 | Plus d'accès Internet | DNS pointant vers lui-même | **Redirecteurs DNS** (`8.8.8.8`) |
+| 5 | 03 | `dcdiag` en erreur | Réplication SYSVOL / DNS transitoires | `registerdns` + `Restart-Service Netlogon` |
+| 6 | 04 | VNet refusé — `RequestDisallowedByAzure` | West Europe n'accepte plus de clients | Bascule **Germany West Central** |
+| 7 | 06 | Fichier cloud non répliqué | Détection différée (jusqu'à 24 h) | `Invoke-AzStorageSyncChangeDetection` |
+| 8 | 08 | Entra Connect introuvable | Déplacé par Microsoft | **Entra Admin Center** |
+| 9 | 09 | SWA refusée par la policy | GWC n'existe pas pour SWA | Élargir la policy à **West US 2** |
+| 10 | 09 | West Europe saturée (SWA) | Capacité région | Région **West US 2** (service global) |
+| 11 | 11 | `TasksOperationsNotAllowed` | ACR Tasks bloqués (abonnement) | **Build local Docker** + push |
+| 12 | 11 | Conteneur inaccessible | Port `:3000` manquant / HTTPS forcé | ACI = `http://…:3000`, ACA = `https://…` |
+| 13 | 10 | Site VM en timeout | NSG sur IP dynamique + port | Règle NSG (IP courante) + `http://…` |
+| 14 | 13 | OIDC `AADSTS700213` | Subject GitHub **personnalisé** (IDs) | Identité fédérée **« Autre émetteur »** |
+
+---
 ---
 
 ## 🗺️ Roadmap
@@ -464,13 +605,14 @@ Depuis **entra.microsoft.com → Microsoft Entra Connect → Cloud Sync**, tél�
 - [x] Hybridation fichiers (Azure File Sync)
 - [x] Structuration AD
 - [x] Identité hybride (Entra Connect)
-- [ ] Compute : App Service, Static Web Apps, VM
-- [ ] Conteneurs : ACR → ACI → ACA (`leads-hub`)
+- [x] Compute PaaS/IaaS : Static Web Apps + Azure VM (nginx)
+- [x] Conteneurs : ACR → ACI → ACA (`leads-hub`)
 - [ ] VPN Gateway (Site-to-Site)
+- [ ] **Migration On-Premise → Azure (Azure Migrate)**
 - [ ] Data : Azure Data Explorer + Event Hubs
 - [ ] Edge & WAF : Front Door + Application Gateway
 - [ ] Sauvegarde : Recovery Services Vault
-- [ ] DevSecOps : CI/CD GitHub Actions (OIDC + *shift-left*)
+- [x] DevSecOps : CI/CD GitHub Actions (OIDC + *shift-left*)
 - [ ] Supervision : Azure Monitor, App Insights, Sentinel
 - [ ] Document d'Architecture Technique (DAT)
 
@@ -480,7 +622,7 @@ Depuis **entra.microsoft.com → Microsoft Entra Connect → Cloud Sync**, tél�
 
 **Cloud** : Microsoft Azure (Germany West Central) · Microsoft Entra ID
 **On-Premise** : VMware Workstation Pro · Windows Server 2025 (AD DS, DNS, DHCP, Fichiers)
-**Hybridation** : Azure File Sync · Entra Connect Cloud Sync
+**Hybridation & migration** : Azure File Sync · Entra Connect Cloud Sync · Azure Migrate
 **IaC & outils** : Azure CLI · Bicep · Docker · Node.js · Git · PowerShell · VS Code
 **DevSecOps (à venir)** : GitHub Actions · CodeQL · Trivy · Checkov · SonarQube · OWASP ZAP · Defender · Sentinel
 
