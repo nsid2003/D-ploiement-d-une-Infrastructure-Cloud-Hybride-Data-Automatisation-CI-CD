@@ -28,7 +28,11 @@
   - [Étape 09 — Site web (Static Web Apps)](#-étape-09--premier-site-web-azure-static-web-apps)
   - [Étape 10 — Compute IaaS (Azure VM)](#-étape-10--compute-iaas-machine-virtuelle-ubuntu)
   - [Étape 11 — Conteneurs (ACR → ACI → ACA)](#-étape-11--conteneurs-acr--aci--aca)
+  - [Étape 12 — Migration On-Premise → Azure (Azure Migrate)](#-étape-12--migration-on-premise--azure-azure-migrate)
   - [Étape 13 — CI/CD DevSecOps (GitHub Actions)](#-étape-13--cicd-devsecops-github-actions)
+  - [Étape 14 — Gestion du stockage (Storage Explorer)](#️-étape-14--gestion-du-stockage-azure-storage-explorer)
+  - [Étape 15 — Supervision & SIEM (Sentinel + KQL)](#️-étape-15--supervision--siem-microsoft-sentinel--kql)
+  - [Étape 16 — Sauvegarde (Recovery Services Vault)](#-étape-16--sauvegarde-recovery-services-vault)
 - [Journal de troubleshooting](#️-journal-de-troubleshooting-err--fix)
 - [Roadmap](#️-roadmap)
 - [Stack technique](#-stack-technique)
@@ -547,6 +551,57 @@ sudo cp -r ~/site/* /var/www/html/ ; sudo systemctl reload nginx
 
 ---
 
+## 🚚 Étape 12 — Migration On-Premise → Azure (Azure Migrate)
+
+**But :** découvrir et évaluer une charge de travail locale en vue de sa migration vers Azure, avec **Azure Migrate**.
+**Choix justifiés :** hôte **Hyper-V natif** (Windows Education) plutôt que virtualisation imbriquée VMware (fragile) ; on déploie un **vrai site** (`drox360`) pour une démo réaliste, en **copiant uniquement** le `dist/` (le dépôt de production n'est jamais modifié) ; **appliance Azure Migrate** pour une découverte continue ; évaluation **« Localement »** pour un résultat immédiat (les compteurs de perf ne sont pas encore collectés).
+
+> ⚠️ **Portée de cette étape.** Ce bloc couvre **découverte + évaluation** — le cœur pédagogique d'Azure Migrate. L'**exécution de la migration** (réplication + bascule) est **reportée à un projet dédié** : elle bute sur une limite d'infrastructure documentée plus bas (Hyper-V **client** non supporté pour la migration sans agent).
+
+### 1. Activer Hyper-V sur l'hôte + commutateur virtuel
+Hôte en **Windows Education** → rôle Hyper-V activé, puis création d'un commutateur (externe sur la carte, puis **Commutateur par défaut / vSwitch-Externe** pour la fiabilité).
+| Gestionnaire Hyper-V | Commutateur virtuel |
+|---|---|
+| ![Hyper-V hôte](Screenshots/Etape12-01-GestionnaireHyperV-Hote.png) | ![Commutateur](Screenshots/Etape12-02-CommutateurVirtuel-Externe.png) |
+> ✅ *Plateforme de virtualisation locale opérationnelle — elle jouera le rôle de datacenter source pour la migration.*
+
+### 2. Créer la VM de charge + déployer un vrai site (drox360)
+VM **Ubuntu Server 24.04** (Génération 2, Secure Boot = *UEFI CA*), puis **Nginx** et déploiement du `dist/` de **drox360** (build Vite copié via `scp`, **sans toucher au dépôt**).
+| Ubuntu installé | drox360 servi On-Prem |
+|---|---|
+| ![Ubuntu](Screenshots/Etape12-05-Ubuntu-Installe.png) | ![drox360 on-prem](Screenshots/Etape12-11-Drox360-OnPrem.png) |
+> ✅ *Un vrai site de production tourne sur la VM locale (`192.168.1.23`) → charge de travail crédible à migrer.*
+
+### 3. Créer le projet Azure Migrate + déployer l'appliance Hyper-V
+Projet `migrate-4sky` (RG `rg-4sky-migrate`), puis import du **VHD de l'appliance** dans Hyper-V, enregistrement via **clé de projet** + connexion Azure.
+| Projet Azure Migrate | Appliance démarrée | Appliance enregistrée |
+|---|---|---|
+| ![Projet](Screenshots/Etape12-12-ProjetAzureMigrate.png) | ![Appliance](Screenshots/Etape12-15-Appliance-Demarree.png) | ![Enregistrée](Screenshots/Etape12-17-Appliance-Enregistree.png) |
+> 💡 *L'erreur rouge « NSX Manager » est **bénigne** : NSX est spécifique à VMware, sans objet en Hyper-V.*
+
+### 4. Préparer l'hôte (WinRM) + découverte
+Activation **WinRM** sur l'hôte (`Enable-PSRemoting`, profil réseau **Privé**), création d'un **compte local admin** dédié (`migadmin`), puis ajout de l'hôte `192.168.1.12` dans l'appliance → **découverte**.
+| Validation WinRM de l'hôte | Découverte lancée |
+|---|---|
+| ![Validation](Screenshots/Etape12-23-Validation-WinRM.png) | ![Découverte](Screenshots/Etape12-25-Decouverte-Lancee.png) |
+> ✅ *L'appliance interroge l'hôte Hyper-V en WinRM et remonte les VMs vers Azure. (Les alertes « inventaire logiciel 0% » sont bénignes : elles ne concernent que la découverte **invité**, pas la migration.)*
+
+### 5. Évaluation (readiness + dimensionnement + coût)
+Évaluation `eval-drox360` (**Azure VM**, dimensionnement **Localement**, cible **Germany West Central**).
+![Résultat évaluation](Screenshots/Etape12-29-Resultat-Evaluation.png)
+> ✅ *Rapport généré : **coût mensuel estimé ~233 $**, empreinte ~8 KgCO2e. La **préparation « Inconnu »** vient de l'inventaire invité incomplet (pas d'accès SSH certifiant l'OS) — **non bloquant** : les moteurs d'évaluation et de migration sont distincts.*
+
+### 6. ⚠️ Limite : Hyper-V client non supporté pour la migration sans agent
+L'installation du **fournisseur de réplication** (Azure Site Recovery) échoue sur l'hôte.
+![ERR — Provider Hyper-V client](Screenshots/Etape12-ERR_ProviderHyperVClient.png)
+> ❌ *« Setup cannot proceed… Hyper-V **role** enabled » : l'ASR Provider exige un hôte **Windows Server** (rôle Hyper-V), or l'hôte est **Windows 11** (Hyper-V y est une **fonctionnalité client**). Azure Migrate ne supporte pas le Hyper-V client pour la migration agentless.*
+>
+> 🔀 **Décision projet** : la migration réelle se fera en **agent-based** (traiter drox360 comme un serveur physique : *Mobility Service* + appliance de réplication) dans un **projet dédié**, mieux dimensionné en ressources. La partie découverte + évaluation reste acquise ici.
+>
+> 🧹 **Nettoyage budget** : éteindre/supprimer l'appliance de découverte et les ressources du projet `rg-4sky-migrate` (Key Vault + compte de stockage auto-créés) après captures.
+
+---
+
 ## 🔐 Étape 13 — CI/CD DevSecOps (GitHub Actions)
 
 **But :** automatiser **build → scan sécurité → déploiement** à chaque push, **sans aucun secret** (OIDC).
@@ -572,6 +627,83 @@ sudo cp -r ~/site/* /var/www/html/ ; sudo systemctl reload nginx
 
 ---
 
+## 🗄️ Étape 14 — Gestion du stockage (Azure Storage Explorer)
+
+**But :** administrer les comptes de stockage depuis l'**application de bureau**, plus confortable que le portail pour naviguer, téléverser et partager.
+**Choix justifiés :** **Storage Explorer** (client officiel) pour gérer visuellement **Blob + Files** dans une seule interface ; génération d'un **SAS** (jeton d'accès délégué à durée limitée) plutôt que de diffuser la clé de compte.
+
+### 1. Installer et connecter Storage Explorer
+Télécharger **Microsoft Azure Storage Explorer**, l'installer, puis se connecter avec le compte Azure (ou attacher le compte de stockage).
+| Application installée | Connexion au compte | Compte attaché |
+|---|---|---|
+| ![Storage Explorer](Screenshots/Etape14-StorageExplorerInstalle.png) | ![Connexion](Screenshots/Etape14-ConnexionCompte.png) | ![Compte attaché](Screenshots/Etape14-CompteAttache.png) |
+> ✅ *`st4skyshared01` apparaît dans l'arborescence : Blob Containers, File Shares, Queues, Tables — tout est accessible depuis le bureau.*
+
+### 2. Téléverser un blob et parcourir le partage Files
+Upload d'un fichier (télémétrie web `telemetrie-4sky.csv`) dans un conteneur Blob, et navigation du partage **`partage-4sky`** (le même que celui synchronisé par Azure File Sync).
+| Upload d'un blob | Partage Azure Files (File Sync) |
+|---|---|
+| ![Upload blob](Screenshots/Etape14-UploadBlob.png) | ![Partage Files](Screenshots/Etape14-PartageFileSync.png) |
+> ✅ *On retrouve côté cloud les fichiers remontés par File Sync (Étape 06) → cohérence de bout en bout de la couche stockage.*
+
+### 3. Générer un jeton SAS
+Clic droit sur le conteneur/fichier → **Get Shared Access Signature** : droits et fenêtre de validité limités.
+![SAS](Screenshots/Etape14-SAS.png)
+> ✅ *Accès temporaire et restreint distribué **sans jamais exposer la clé du compte** — bonne pratique de moindre privilège.*
+
+---
+
+## 🛰️ Étape 15 — Supervision & SIEM (Microsoft Sentinel + KQL)
+
+**But :** centraliser les journaux et activer un **SIEM** pour détecter et alerter sur l'activité de l'abonnement.
+**Choix justifiés :** **Microsoft Sentinel** posé sur l'espace **Log Analytics `law-4sky`** (réutilisation des fondations) ; connecteur **Azure Activity** pour ingérer les opérations de gestion ; **KQL** pour requêter ; **alerte** pour la détection proactive.
+
+### 1. Activer Microsoft Sentinel
+Rechercher **Microsoft Sentinel → Ajouter** → sélectionner l'espace de travail **`law-4sky`**.
+![Sentinel activé](Screenshots/Etape15-SentinelActive.png)
+> ✅ *Sentinel est branché sur le Log Analytics existant : aucune donnée dupliquée, une seule « tour de contrôle ».*
+
+### 2. Connecter la source Azure Activity
+**Connecteurs de données → Azure Activity → Connecter** (via Diagnostic Settings) : les journaux d'activité de l'abonnement remontent dans Sentinel.
+![Connecteur Azure Activity](Screenshots/Etape15-ConnecteurActivity.png)
+> ✅ *Toutes les opérations de gestion (créations, suppressions, changements de rôle…) sont désormais collectées et analysables.*
+
+### 3. Interroger en KQL
+Requête **Kusto (KQL)** sur la table `AzureActivity` (ex. opérations récentes, par appelant/ressource).
+![KQL Azure Activity](Screenshots/Etape15-KQL-Activity.png)
+> ✅ *Le KQL permet de filtrer, agréger et corréler les événements — le langage central de la supervision Azure.*
+
+### 4. Créer une règle d'alerte
+Création d'une **alerte** (Azure Monitor / règle analytique) déclenchée sur un motif d'activité.
+![Alerte](Screenshots/Etape15-Alerte.png)
+> ✅ *La supervision devient **proactive** : au lieu de consulter les journaux, on est **notifié** quand un événement suspect survient.*
+
+---
+
+## 💾 Étape 16 — Sauvegarde (Recovery Services Vault)
+
+**But :** protéger les données du partage de fichiers avec **Azure Backup**.
+**Choix justifiés :** **Recovery Services Vault** dans la même région que le compte (`Germany West Central`) ; **Azure Files Backup** (sauvegarde par instantanés, sans agent) ; **stratégie quotidienne** avec rétention 30 jours.
+
+### 1. Créer le coffre Recovery Services
+`rsv-4sky` dans `rg-4sky-shared`, **Germany West Central** (impératif : coffre et compte de stockage doivent être **dans la même région**).
+![Coffre Recovery Services](Screenshots/Etape16-Coffre.png)
+> ✅ *Le coffre centralise les points de récupération et la gouvernance des sauvegardes.*
+
+### 2. ⚠️ Incident : « Aucun compte de stockage » à la sélection
+En configurant la sauvegarde Azure Files depuis le coffre, le compte `st4skyshared01` **n'apparaît pas**.
+![ERR — aucun compte découvert](Screenshots/Etape16-ERR_AucunCompte.png)
+> ❌ *Cause : le partage `partage-4sky` est **déjà protégé par un autre coffre**. Un compte/partage ne peut être associé qu'à **un seul coffre à la fois** — d'où la liste vide (« non enregistrés auprès d'un autre coffre »).*
+
+### 3. FIX : piloter la sauvegarde depuis le partage
+En passant par **`st4skyshared01 → Partage de fichiers → partage-4sky → Sauvegarde`**, on retrouve la protection **active** et ses points de récupération.
+![Sauvegarde active + points de récupération](Screenshots/Etape16-SauvegardeAzureFiles-PointsRecuperation.png)
+> ✅ *Sauvegarde **Réussie**, stratégie quotidienne (rétention 30 j), plusieurs **points de récupération** disponibles → le partage est protégé et restaurable.*
+>
+> 💡 *Leçon : pour vérifier/gérer la sauvegarde d'un partage, entrer **par le compte de stockage** est plus fiable que la découverte depuis le coffre.*
+
+---
+
 ## 🛠️ Journal de troubleshooting (ERR → FIX)
 
 Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obstacle est documenté avec sa cause et sa solution.
@@ -592,6 +724,11 @@ Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obsta
 | 12 | 11 | Conteneur inaccessible | Port `:3000` manquant / HTTPS forcé | ACI = `http://…:3000`, ACA = `https://…` |
 | 13 | 10 | Site VM en timeout | NSG sur IP dynamique + port | Règle NSG (IP courante) + `http://…` |
 | 14 | 13 | OIDC `AADSTS700213` | Subject GitHub **personnalisé** (IDs) | Identité fédérée **« Autre émetteur »** |
+| 15 | 12 | Virtualisation imbriquée VMware→Hyper-V KO | Nesting fragile (Device/Credential Guard) | Passer l'hôte en **Windows Education** (Hyper-V natif) |
+| 16 | 12 | VM sans IP (`eth0` non connecté) | Commutateur externe Wi-Fi (traduction MAC) | **Commutateur par défaut** / `vSwitch-Externe` |
+| 17 | 12 | `Set-WSManQuickConfig` échoue | Réseau classé **Public** | Passer le profil réseau en **Privé** |
+| 18 | 12 | ASR Provider — « no compatible product » | Hyper-V **client** non supporté (Windows 11) | Migration **agent-based** (projet dédié) |
+| 19 | 16 | Aucun compte de stockage découvert (Backup) | Partage déjà protégé par un autre coffre | Un partage = **un seul coffre** → piloter depuis le partage |
 
 ---
 ---
@@ -607,13 +744,14 @@ Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obsta
 - [x] Identité hybride (Entra Connect)
 - [x] Compute PaaS/IaaS : Static Web Apps + Azure VM (nginx)
 - [x] Conteneurs : ACR → ACI → ACA (`leads-hub`)
+- [x] Migration On-Premise → Azure : **découverte + évaluation** (Azure Migrate) — *exécution reportée à un projet dédié (agent-based)*
+- [x] Gestion du stockage : Azure Storage Explorer (Blob, Files, SAS)
+- [x] DevSecOps : CI/CD GitHub Actions (OIDC + *shift-left*)
+- [x] Supervision & SIEM : Azure Monitor + **Microsoft Sentinel** (KQL)
+- [x] Sauvegarde : Recovery Services Vault (**Azure Files Backup**)
 - [ ] VPN Gateway (Site-to-Site)
-- [ ] **Migration On-Premise → Azure (Azure Migrate)**
 - [ ] Data : Azure Data Explorer + Event Hubs
 - [ ] Edge & WAF : Front Door + Application Gateway
-- [ ] Sauvegarde : Recovery Services Vault
-- [x] DevSecOps : CI/CD GitHub Actions (OIDC + *shift-left*)
-- [ ] Supervision : Azure Monitor, App Insights, Sentinel
 - [ ] Document d'Architecture Technique (DAT)
 
 ---
@@ -624,7 +762,7 @@ Ce projet met l'accent sur la **résolution de problèmes réels**. Chaque obsta
 **On-Premise** : VMware Workstation Pro · Windows Server 2025 (AD DS, DNS, DHCP, Fichiers)
 **Hybridation & migration** : Azure File Sync · Entra Connect Cloud Sync · Azure Migrate
 **IaC & outils** : Azure CLI · Bicep · Docker · Node.js · Git · PowerShell · VS Code
-**DevSecOps (à venir)** : GitHub Actions · CodeQL · Trivy · Checkov · SonarQube · OWASP ZAP · Defender · Sentinel
+**DevSecOps & supervision** : GitHub Actions (OIDC) · Trivy · Microsoft Sentinel (KQL) · Azure Monitor — *à venir : CodeQL · Checkov · SonarQube · OWASP ZAP · Defender*
 
 ---
 

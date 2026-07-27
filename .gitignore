@@ -118,3 +118,9 @@ drox360/
 play-to-sky-production/
 pulse-x-agency/
 visuance/
+
+# ----------------------------------------------------------
+# 📦 Artefacts de build / staging de déploiement (non versionnés)
+#   Générés à la volée (ex. dist copié vers une VM) — pas de code source
+# ----------------------------------------------------------
+deploy/
